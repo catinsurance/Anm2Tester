@@ -2,6 +2,11 @@ local TextCapture = {}
 local endCallback = function ()
     return
 end
+local skipCallback = function ()
+    return
+end
+
+local backspaceCooldown = 0
 
 -- this is code that i originally wrote for Epiphany
 
@@ -66,7 +71,7 @@ function TextCapture:CaptureText(_, hook)
     end
 end
 
-function TextCapture:StartInputCapture(dssmod, target, callback)
+function TextCapture:StartInputCapture(dssmod, target, callback, skip)
     dssmod:DisableInput()
     TextCapture.TextCaptureTarget = target
     TextCapture.CapturingTextLine = ""
@@ -75,24 +80,43 @@ function TextCapture:StartInputCapture(dssmod, target, callback)
     if callback then
         endCallback = callback
     end
+
+    if skip then
+        skipCallback = skip
+    end
 end
 
-function TextCapture:EndInputCapture(dssmod)
+function TextCapture:EndInputCapture(dssmod, skip)
     TextCapture.CapturingText = false
     TextCapture.FinalizedCapturedTextLine = TextCapture.CapturingTextLine
     TextCapture.CapturingTextLine = ""
     TextCapture.TextCaptureTarget = nil
 
     dssmod:EnableInput()
-    endCallback()
+
+    if not skip then
+        endCallback()
+    else
+        skipCallback()
+    end
 end
 
 return function (mod, dssmod)
     function TextCapture:TextCaptureHandler()
+        backspaceCooldown = math.max(backspaceCooldown - 1, 0)
         if TextCapture.CapturingText then
             dssmod:DisableInput()
+
             if TextCapture.CapturingTextLine == " " then -- bandaid fix for the text being set to space when text capture starts
                 TextCapture.CapturingTextLine = ""
+            end
+
+            if Input.IsButtonPressed(Keyboard.KEY_LEFT_CONTROL, 0) and Input.IsButtonTriggered(Keyboard.KEY_V, 0) then
+                local paste = Isaac.GetClipboard()
+                if paste then
+                    TextCapture.CapturingTextLine = TextCapture.CapturingTextLine .. paste
+                end
+                return
             end
 
             for character, str in pairs(validCharacters) do
@@ -105,19 +129,24 @@ return function (mod, dssmod)
                 end
             end
 
-            if Input.IsButtonTriggered(Keyboard.KEY_BACKSPACE, 0) then
+            if Input.IsButtonPressed(Keyboard.KEY_BACKSPACE, 0) and backspaceCooldown == 0 then
+                backspaceCooldown = 10
                 TextCapture.CapturingTextLine = TextCapture.CapturingTextLine:sub(1, TextCapture.CapturingTextLine:len() - 1)
             end
 
             TextCapture.LastTextCaptureTarget = TextCapture.TextCaptureTarget
 
-            if Input.IsButtonTriggered(Keyboard.KEY_ENTER, 0) or Input.IsButtonTriggered(Keyboard.KEY_ESCAPE, 0) then
+            if Input.IsButtonTriggered(Keyboard.KEY_ENTER, 0) then
                 TextCapture:EndInputCapture(dssmod)
+            end
+
+            if Input.IsButtonTriggered(Keyboard.KEY_ESCAPE, 0) then
+                TextCapture:EndInputCapture(dssmod, true)
             end
         end
     end
 
-    mod:AddCallback(ModCallbacks.MC_POST_RENDER, TextCapture.TextCaptureHandler)
+    mod:AddPriorityCallback(ModCallbacks.MC_POST_RENDER, CallbackPriority.LATE, TextCapture.TextCaptureHandler)
 
     function TextCapture:CaptureText(_, hook)
         if hook ~= InputHook.IS_ACTION_PRESSED and hook ~= InputHook.IS_ACTION_TRIGGERED then

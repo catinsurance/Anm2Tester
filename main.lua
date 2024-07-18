@@ -4,7 +4,7 @@ include("scripts.saveData")
 
 local game = Game()
 local hudFont = Font()
-hudFont:Load("font/teammeatfont12.fnt")
+hudFont:Load("font/pftempestasevencondensed.fnt")
 
 --#endregion
 
@@ -96,7 +96,6 @@ end
 ---@field Offset {x: number, y: number} @The offset of the sprite from the center of the screen
 ---@field CurrentAnimation string @The current animation being played
 ---@field PlayingAnimation boolean @Whether or not the sprite is playing an animation
----@field SixtyFPS boolean @Whether or not the sprite is playing at 60 FPS
 ---@field ForceLoop boolean @Force the animation to loop, even if it normally wouldn't.
 ---@field PlaybackSpeed number @The playback speed of the sprite
 
@@ -122,15 +121,13 @@ local function loadAnm2(path)
 end
 
 local function clearCache()
-    for _, sprite in ipairs(loadedSprites) do
-        sprite.Sprite:Reset()
-    end
+    selectedConfigSprite:Reset()
 
     Isaac.ExecuteCommand("clearcache")
 
-    for _, sprite in ipairs(loadedSprites) do
-        sprite.Sprite:Load(sprite.Path, true)
-        sprite.Sprite:Play(sprite.CurrentAnimation, true)
+    if selectedConfig then
+        selectedConfigSprite:Load(selectedConfig.Path, true)
+        selectedConfigSprite:Play(selectedConfig.CurrentAnimation, true)
     end
 end
 
@@ -761,46 +758,13 @@ end
 
 --#region Dss Main Menu
 
-directory.main = {
-    title = "anm2 tester",
-    buttons = {
-        {
-            str = "close",
-            action = "resume"
-        },
-        {
-            str = "anm2 tester",
-            dest = "spriteViewer",
-        },
-        {
-            str = "settings",
-            dest = "settings,"
-        },
-        {
-            str = "quick test",
-            func = function()
-                if directoryState == DirectoryStates.NORMAL then
-                    directoryState = DirectoryStates.MINIMAL
-                else
-                    directoryState = DirectoryStates.NORMAL
-                end
-            end
-        },
-    },
-    generate = function ()
-        directoryState = DirectoryStates.NORMAL
-        selectedConfig = nil
-    end,
-    tooltip = generateTooltip("what would you like to do?")
-}
-
 --#endregion
 
 --#region Dss Sprite Viewer
 
 local previewConfig
 
-directory.spriteViewer = {
+directory.main = {
     title = "anm2 tester",
     buttons = {},
     generate = function (tbl)
@@ -838,7 +802,7 @@ directory.spriteViewer = {
                 local currentEnd = #tbl.buttons + 1
                 local isSelected = false
                 local button = {
-                    str = grabFilename(config.Path),
+                    str = config.Name:lower(),
                     fsize = 2,
                     dest = "configManager",
                     update = function (_, item)
@@ -846,7 +810,6 @@ directory.spriteViewer = {
                             local configToCopy = loadedSprites[index]
                             previewConfig = {
                                 CurrentAnimation = configToCopy.CurrentAnimation,
-                                SixtyFPS = configToCopy.SixtyFPS,
                                 ForceLoop = configToCopy.ForceLoop
                             }
 
@@ -861,12 +824,16 @@ directory.spriteViewer = {
                     end,
                     func = function ()
                         selectedConfig = loadedSprites[index]
+                        selectedConfigSprite:Load(selectedConfig.Path, true)
                         selectedConfigSprite:Play(selectedConfig.CurrentAnimation, true)
                     end
                 }
 
                 table.insert(tbl.buttons, button)
             end
+        else
+            -- Make sure the sprite is reset
+            selectedConfigSprite:Reset()
         end
     end,
     postrender = function (item, tbl)
@@ -884,9 +851,7 @@ directory.spriteViewer = {
 
                     previewConfig.Sprite:Render(pos)
 
-                    if previewConfig.SixtyFPS then
-                        previewConfig.Sprite:Update()
-                    elseif Isaac.GetFrameCount() % 2 == 0 then
+                    if Isaac.GetFrameCount() % 2 == 0 then
                         previewConfig.Sprite:Update()
                     end
                 end
@@ -900,7 +865,7 @@ directory.spriteViewer = {
 --#region Dss Anm2 Config Manager
 
 directory.configManager = {
-    title = "new config",
+    title = "edit config",
     generate = function (tbl)
         directoryState = DirectoryStates.MINIMAL
         renderConfig = true
@@ -912,7 +877,6 @@ directory.configManager = {
                 Name = "New Config",
                 CurrentAnimation = "Idle",
                 Path = "gfx/ui/placeholder.anm2",
-                SixtyFPS = false,
                 ForceLoop = false,
                 PlaybackSpeed = 1,
                 PlayingAnimation = true,
@@ -930,15 +894,29 @@ directory.configManager = {
             anmTester:Save()
         end
 
-        tbl.title = selectedConfig.Name:lower()
-
         -- setup buttons
         tbl.buttons = {
             -- info
             {
-                str = "more info...",
+                str = "set name:",
+                nosel = true,
                 fsize = 2,
-                tooltip = generateTooltip("select for help setting up")
+            },
+            {
+                str = selectedConfig.Name:lower(),
+                fsize = 1,
+                tooltip = generateTooltip("change the name of the config"),
+                func = function (button)
+                    if not TextCapture.CapturingText then
+                        TextCapture:StartInputCapture(dssMod, "Config Name", function ()
+                            -- check path
+                            selectedConfig.Name = TextCapture.FinalizedCapturedTextLine:lower()
+                            button.str = selectedConfig.Name
+                        end, function ()
+                            button.str = selectedConfig.Name:lower()
+                        end)
+                    end
+                end
             },
             BREAK_LINE,
             -- anm2 loader
@@ -948,10 +926,10 @@ directory.configManager = {
                 fsize = 2,
             },
             {
-                str = grabFilename(selectedConfig.Path),
+                str = selectedConfig.Path:lower(),
                 fsize = 1,
                 tooltip = generateTooltip("enter the file path of your anm2 file"),
-                func = function (_, _, tbl)
+                func = function (button, _, tbl)
                     if not TextCapture.CapturingText then
                         TextCapture:StartInputCapture(dssMod, "Anm2 Name", function ()
                             -- check path
@@ -961,7 +939,6 @@ directory.configManager = {
                                 selectedConfig.CurrentAnimation = dummySprite:GetDefaultAnimation()
                                 selectedConfig.Path = stripped .. ".anm2"
                                 selectedConfigSprite = dummySprite
-                                selectedConfig.SixtyFPS = false
                                 selectedConfig.ForceLoop = false
                                 selectedConfig.Offset = {0, 0}
                                 selectedConfig.PlayingAnimation = true
@@ -969,19 +946,26 @@ directory.configManager = {
                                 -- refresh page
                                 DeadSeaScrollsMenu.OpenMenuToPath(tbl.Name, "configManager", tbl.DirectoryKey.Path)
                             end
+                        end, function ()
+                            button.str = selectedConfig.Path:lower()
                         end)
                     end
                 end,
                 update = function (button, tab)
                     if TextCapture.CapturingText and TextCapture.TextCaptureTarget == "Anm2 Name" then
                         button.str = ""
-
-                        -- render the placeholder text
-                        hudFont:DrawStringScaled(TextCapture.CapturingTextLine, bselPosition.X, bselPosition.Y, 1, 1, KColor(1, 1, 1, 1), 0, true)
                     end
                 end
             },
             BREAK_LINE,
+            {
+                str = "reload",
+                fsize = 2,
+                tooltip = generateTooltip("select to reload the sprite cache"),
+                func = function ()
+                    clearCache()
+                end
+            },
             BREAK_LINE,
             -- animation chooser
             {
@@ -1002,7 +986,6 @@ directory.configManager = {
                 nosel = true,
                 fsize = 2,
             },
-            BREAK_LINE,
         }
 
         -- Insert animations
@@ -1041,17 +1024,6 @@ directory.configManager = {
 
                 changefunc = function (button)
                     selectedConfig.ForceLoop = button.setting == 2
-                end
-            },
-            {
-                str = "playing at: 30 fps",
-                fsize = 1,
-                func = function (button)
-                    selectedConfig.SixtyFPS = not selectedConfig.SixtyFPS
-                    button.str = selectedConfig.SixtyFPS and "playing at: 60 fps" or "playing at: 30 fps"
-                end,
-                generate = function (button)
-                    button.str = selectedConfig.SixtyFPS and "playing at: 60 fps" or "playing at: 30 fps"
                 end
             },
             BREAK_LINE,
@@ -1137,7 +1109,7 @@ directory.deleteConfig = {
                 end
                 selectedConfig = nil
 
-                DeadSeaScrollsMenu.OpenMenuToPath(tbl.Name, "spriteViewer", tbl.DirectoryKey.Path)
+                DeadSeaScrollsMenu.OpenMenuToPath(tbl.Name, "main")
             end
         }
     }
@@ -1159,6 +1131,28 @@ end
 --#endregion
 
 --#region Sprite rendering stuff
+
+function anmTester:HandleHudFontRender()
+    if TextCapture.CapturingText then
+        local cancelStr = "Press ESCAPE to cancel"
+        local cancelStrPos = Vector(Isaac.GetScreenWidth() / 2, 15) - Vector(hudFont:GetStringWidth(cancelStr) / 2, 0)
+        hudFont:DrawStringScaled(cancelStr, cancelStrPos.X, cancelStrPos.Y, 1, 1, KColor.White, 0, true)
+
+        local pasteStr = "CTRL + V to paste text"
+        local pasteStrPos = Vector(Isaac.GetScreenWidth() / 2, 30) - Vector(hudFont:GetStringWidth(pasteStr) / 2, 0)
+        hudFont:DrawStringScaled(pasteStr, pasteStrPos.X, pasteStrPos.Y, 1, 1, KColor.White, 0, true)
+
+        local enterStr = "ENTER to confirm"
+        local enterStrPos = Vector(Isaac.GetScreenWidth() / 2, 45) - Vector(hudFont:GetStringWidth(enterStr) / 2, 0)
+        hudFont:DrawStringScaled(enterStr, enterStrPos.X, enterStrPos.Y, 1, 1, KColor.White, 0, true)
+
+        -- render the text
+        local center = Vector(Isaac.GetScreenWidth() / 2, Isaac.GetScreenHeight() / 2) - Vector(hudFont:GetStringWidth(TextCapture.CapturingTextLine) / 2, 0)
+        hudFont:DrawStringScaled(TextCapture.CapturingTextLine, center.X, center.Y, 1, 1, KColor.White, 0, true)
+    end
+end
+
+anmTester:AddCallback(ModCallbacks.MC_POST_RENDER, anmTester.HandleHudFontRender)
 
 function anmTester:HandleSpriteRender()
     local room = game:GetRoom()
@@ -1183,14 +1177,12 @@ function anmTester:HandleSpriteRender()
 
     selectedConfigSprite:Render(pos)
 
-    if selectedConfig.SixtyFPS then
-        selectedConfigSprite:Update()
-    elseif Isaac.GetFrameCount() % 2 == 0 then
+    if Isaac.GetFrameCount() % 2 == 0 then
         selectedConfigSprite:Update()
     end
 end
 
-anmTester:AddCallback(ModCallbacks.MC_POST_RENDER, anmTester.HandleSpriteRender)
+anmTester:AddPriorityCallback(ModCallbacks.MC_POST_RENDER, CallbackPriority.EARLY, anmTester.HandleSpriteRender)
 
 -- if you quit the run while the menu is open, the sprite will still be loaded
 -- so fix that ig
