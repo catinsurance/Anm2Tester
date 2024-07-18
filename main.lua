@@ -1,55 +1,31 @@
 local anmTester = RegisterMod("Anm2Tester", 1)
-local json = require("scripts.dependencies.json")
-local saveData
+_G.anmTester = anmTester
+include("scripts.saveData")
 
 local game = Game()
+local hudFont = Font()
+hudFont:Load("font/teammeatfont12.fnt")
 
---#region Save Data
-function anmTester.LoadSaveData()
-    if not saveData then
-        if anmTester:HasData() then
-            saveData = json.decode(anmTester:LoadData())
-        else
-            saveData = {}
-        end
-    end
-
-    return saveData
-end
-
-function anmTester.GetDssData()
-    local data = anmTester.LoadSaveData()
-
-    if not data.DssMenu then
-        data.DssMenu = {}
-    end
-
-    return data.DssMenu
-end
-
-function anmTester.StoreSaveData()
-    anmTester:SaveData(json.encode(saveData))
-end
 --#endregion
 
 --#region DSS Init
 local menuProvider = {}
 
 function menuProvider.SaveSaveData()
-    anmTester.StoreSaveData()
+    anmTester:Save()
 end
 
 function menuProvider.GetPaletteSetting()
-    return anmTester.GetDssData().MenuPalette
+    return anmTester:GetDssData().MenuPalette
 end
 
 function menuProvider.SavePaletteSetting(var)
-    anmTester.GetDssData().MenuPalette = var
+    anmTester:GetDssData().MenuPalette = var
 end
 
 function menuProvider.GetHudOffsetSetting()
     if not REPENTANCE then
-        return anmTester.GetDssData().HudOffset
+        return anmTester:GetDssData().HudOffset
     else
         return Options.HUDOffset * 10
     end
@@ -57,79 +33,89 @@ end
 
 function menuProvider.SaveHudOffsetSetting(var)
     if not REPENTANCE then
-        anmTester.GetDssData().HudOffset = var
+        anmTester:GetDssData().HudOffset = var
     end
 end
 
 function menuProvider.GetGamepadToggleSetting()
-    return anmTester.GetDssData().GamepadToggle
+    return anmTester:GetDssData().GamepadToggle
 end
 
 function menuProvider.SaveGamepadToggleSetting(var)
-    anmTester.GetDssData().GamepadToggle = var
+    anmTester:GetDssData().GamepadToggle = var
 end
 
 function menuProvider.GetMenuKeybindSetting()
-    return anmTester.GetDssData().MenuKeybind
+    return anmTester:GetDssData().MenuKeybind
 end
 
 function menuProvider.SaveMenuKeybindSetting(var)
-    anmTester.GetDssData().MenuKeybind = var
+    anmTester:GetDssData().MenuKeybind = var
 end
 
 function menuProvider.GetMenuHintSetting()
-    return anmTester.GetDssData().MenuHint
+    return anmTester:GetDssData().MenuHint
 end
 
 function menuProvider.SaveMenuHintSetting(var)
-    anmTester.GetDssData().MenuHint = var
+    anmTester:GetDssData().MenuHint = var
 end
 
 function menuProvider.GetMenuBuzzerSetting()
-    return anmTester.GetDssData().MenuBuzzer
+    return anmTester:GetDssData().MenuBuzzer
 end
 
 function menuProvider.SaveMenuBuzzerSetting(var)
-    anmTester.GetDssData().MenuBuzzer = var
+    anmTester:GetDssData().MenuBuzzer = var
 end
 
 function menuProvider.GetMenusNotified()
-    return anmTester.GetDssData().MenusNotified
+    return anmTester:GetDssData().MenusNotified
 end
 
 function menuProvider.SaveMenusNotified(var)
-    anmTester.GetDssData().MenusNotified = var
+    anmTester:GetDssData().MenusNotified = var
 end
 
 function menuProvider.GetMenusPoppedUp()
-    return anmTester.GetDssData().MenusPoppedUp
+    return anmTester:GetDssData().MenusPoppedUp
 end
 
 function menuProvider.SaveMenusPoppedUp(var)
-    anmTester.GetDssData().MenusPoppedUp = var
+    anmTester:GetDssData().MenusPoppedUp = var
 end
 --#endregion
 
 --#region Sprite Handling
 
 ---@class SpriteData
+---@field Id string @A unique id.
+---@field Name string @Config name.
 ---@field Path string @The path to the anm2 file
 ---@field Sprite Sprite @The actual sprite being rendered
----@field Offset Vector @The offset of the sprite from the center of the screen
+---@field Offset {x: number, y: number} @The offset of the sprite from the center of the screen
 ---@field CurrentAnimation string @The current animation being played
 ---@field PlayingAnimation boolean @Whether or not the sprite is playing an animation
 ---@field SixtyFPS boolean @Whether or not the sprite is playing at 60 FPS
----@field RegisteredAnimations string[] @The animations that have been registered to the sprite
+---@field ForceLoop boolean @Force the animation to loop, even if it normally wouldn't.
 ---@field PlaybackSpeed number @The playback speed of the sprite
 
 ---@type SpriteData[]
 local loadedSprites = {}
 
+---@type SpriteData?
+local selectedConfig
+
+local selectedConfigSprite = Sprite()
+
+-- if the config should have the anm2 be rendering
+local renderConfig = false
+
 local function loadAnm2(path)
     local newSprite = Sprite()
     newSprite:Load(path, true)
 
-    if newSprite:GetDefaultAnimation() ~= "" then
+    if newSprite:IsLoaded() then
         newSprite:Play(newSprite:GetDefaultAnimation(), true)
         return newSprite
     end
@@ -144,33 +130,14 @@ local function clearCache()
 
     for _, sprite in ipairs(loadedSprites) do
         sprite.Sprite:Load(sprite.Path, true)
-        sprite.Sprite:Play(sprite.Sprite:GetDefaultAnimation(), true)
+        sprite.Sprite:Play(sprite.CurrentAnimation, true)
     end
 end
 
-function anmTester:RenderAnm2s()
-    local centerOfScreen = Vector(Isaac.GetScreenWidth() / 2, Isaac.GetScreenHeight() / 2)
-    for _, spriteData in ipairs(loadedSprites) do
-        local sprite = spriteData.Sprite
-
-        if spriteData.PlayingAnimation then
-            if sprite:IsFinished(spriteData.CurrentAnimation) then
-                spriteData.PlayingAnimation = false
-            else
-                if not spriteData.SixtyFPS and game:GetFrameCount() % 2 == 0 then
-                    sprite:Update()
-                else
-                    sprite:Update()
-                end
-            end
-        end
-
-        local position = centerOfScreen + spriteData.Offset
-        sprite:Render(position)
-    end
+-- grabs the file name from file path, excluding .anm2 extension
+local function grabFilename(filePath)
+    return filePath:match("^.*/(.*).anm2$") or filePath
 end
-
-anmTester:AddCallback(ModCallbacks.MC_POST_RENDER, anmTester.RenderAnm2s)
 
 --#endregion
 
@@ -181,7 +148,7 @@ local function lerp(a, b, t)
 end
 
 -- auto split tooltips into multiple lines optimally
-local function GenerateTooltip(str)
+local function generateTooltip(str)
     local endTable = {}
     local currentString = ""
     for w in str:gmatch("%S+") do
@@ -220,7 +187,7 @@ local dssModName = "Dead Sea Scrolls (Anm2 Tester)"
 local dssCoreVersion = 7
 local dssMod = DSSInitializerFunction(dssModName, dssCoreVersion, menuProvider)
 
-local selectedConfig
+local TextCapture = include("scripts.inputCapture")(anmTester, dssMod)
 
 --#endregion
 
@@ -233,6 +200,7 @@ local DirectoryStates = {
 
 local directory = {}
 local directoryState = DirectoryStates.NORMAL
+local bselPosition = Vector.Zero
 
 local tallPanelSprite = Sprite()
 tallPanelSprite:Load("gfx/ui/hud/menu_slender.anm2", false)
@@ -263,7 +231,6 @@ for name, sheet in pairs(tallPanelSpriteList) do
 
     ---@diagnostic disable-next-line: assign-type-mismatch
     tallPanelSpriteList[name] = sprite
-    print(sheet)
 end
 
 for name, sheet in pairs(tooltipCloneSpriteList) do
@@ -278,7 +245,7 @@ end
 
 local tallPanel = {
     Sprites = tallPanelSpriteList,
-    Bounds = {-62, -120, 58, 120},
+    Bounds = {-62, -100, 58, 100},
     Height = 168,
     NoUnderline = true,
     TopSpacing = 0,
@@ -303,7 +270,7 @@ local tallPanel = {
         if item.buttons then
             for _, button in ipairs(item.buttons) do
                 buttons[#buttons + 1] = button
-            end
+            end 
         end
 
         if page and page.buttons then
@@ -604,8 +571,6 @@ local function runMenu(tbl)
                     centeritems = panelData.centeritems == nil and true or panelData.centeritems,
                 }
 
-                print(activePanel.Type)
-
                 if panelData.Panel.DefaultRendering then
                     panelData.Panel.StartAppear = panelData.Panel.StartAppear or dssMod.defaultPanelStartAppear
                     panelData.Panel.UpdateAppear = panelData.Panel.UpdateAppear or dssMod.defaultPanelAppearing
@@ -824,54 +789,80 @@ directory.main = {
     },
     generate = function ()
         directoryState = DirectoryStates.NORMAL
+        selectedConfig = nil
     end,
-    tooltip = GenerateTooltip("what would you like to do?")
+    tooltip = generateTooltip("what would you like to do?")
 }
 
 --#endregion
 
 --#region Dss Sprite Viewer
 
+local previewConfig
+
 directory.spriteViewer = {
     title = "anm2 tester",
     buttons = {},
     generate = function (tbl)
+        anmTester:Save()
+
+        directoryState = DirectoryStates.MINIMAL
+        renderConfig = true
         tbl.buttons = {}
 
-        local function onButtonSelect()
-
-        end
-
-        local createNew = {
+        table.insert(tbl.buttons, {
             str = "new config...",
-            dest = "newTest",
-            tooltip = GenerateTooltip("create a new anm2 viewing config."),
-            update = function ()
+            dest = "configManager",
+            tooltip = generateTooltip("create a new anm2 viewing config."),
+            update = function (_, item)
+                if item.bsel == 1 then
+                    previewConfig = nil
+                end
+            end,
+            func = function ()
                 selectedConfig = nil
             end
-        }
+        })
 
-        table.insert(tbl.buttons, createNew)
+        -- Attempt to load sprites.
+        if #loadedSprites == 0 then
+            for _, config in pairs(anmTester.ModData.Configs) do
+                table.insert(loadedSprites, config)
+            end
+        end
 
         if #loadedSprites > 0 then
             table.insert(tbl.buttons, BREAK_LINE)
 
-            table.insert(tbl.buttons, {
-                str = "loaded configs",
-                fsize = 3,
-                nosel = true
-            })
-
-            table.insert(tbl.buttons, BREAK_LINE)
-
             for index, config in ipairs(loadedSprites) do
+                local currentEnd = #tbl.buttons + 1
+                local isSelected = false
                 local button = {
-                    str = config.Path,
+                    str = grabFilename(config.Path),
                     fsize = 2,
                     dest = "configManager",
-                    update = function ()
-                        selectedConfig = index
+                    update = function (_, item)
+                        if item.bsel == currentEnd and not isSelected then
+                            local configToCopy = loadedSprites[index]
+                            previewConfig = {
+                                CurrentAnimation = configToCopy.CurrentAnimation,
+                                SixtyFPS = configToCopy.SixtyFPS,
+                                ForceLoop = configToCopy.ForceLoop
+                            }
+
+                            previewConfig.Sprite = Sprite()
+                            previewConfig.Sprite:Load(config.Path, true)
+                            previewConfig.Sprite:Play(previewConfig.CurrentAnimation, true)
+
+                            isSelected = true
+                        elseif item.bsel ~= currentEnd then
+                            isSelected = false
+                        end
                     end,
+                    func = function ()
+                        selectedConfig = loadedSprites[index]
+                        selectedConfigSprite:Play(selectedConfig.CurrentAnimation, true)
+                    end
                 }
 
                 table.insert(tbl.buttons, button)
@@ -881,18 +872,27 @@ directory.spriteViewer = {
     postrender = function (item, tbl)
         local directoryKey = tbl.DirectoryKey
 
-        if selectedConfig then
+        if previewConfig then
             for _, panel in ipairs(directoryKey.ActivePanels) do
                 if panel.PanelData.Type == "tooltip" then
                     local pos = Vector(0, Isaac.GetScreenHeight() / 2) + panel.PanelData.Offset
-                    local config = loadedSprites[selectedConfig]
                     item.tooltip = nil
 
-                    config.Sprite:Render(pos)
+                    if not previewConfig.Sprite:IsPlaying(previewConfig.CurrentAnimation) then
+                        previewConfig.Sprite:Play(previewConfig.CurrentAnimation, true)
+                    end
+
+                    previewConfig.Sprite:Render(pos)
+
+                    if previewConfig.SixtyFPS then
+                        previewConfig.Sprite:Update()
+                    elseif Isaac.GetFrameCount() % 2 == 0 then
+                        previewConfig.Sprite:Update()
+                    end
                 end
             end
         end
-    end
+    end,
 }
 
 --#endregion
@@ -900,8 +900,305 @@ directory.spriteViewer = {
 --#region Dss Anm2 Config Manager
 
 directory.configManager = {
-    title = ""
+    title = "new config",
+    generate = function (tbl)
+        directoryState = DirectoryStates.MINIMAL
+        renderConfig = true
+
+        if not selectedConfig then
+            -- make a new config
+            local config = {
+                Id = tostring(Random()),
+                Name = "New Config",
+                CurrentAnimation = "Idle",
+                Path = "gfx/ui/placeholder.anm2",
+                SixtyFPS = false,
+                ForceLoop = false,
+                PlaybackSpeed = 1,
+                PlayingAnimation = true,
+                Offset = {0, 0}
+            }
+
+            selectedConfigSprite:Load(config.Path, true)
+            selectedConfigSprite:Play(config.CurrentAnimation, true)
+
+            table.insert(loadedSprites, config)
+            selectedConfig = loadedSprites[#loadedSprites]
+
+            -- Add to save data
+            anmTester.ModData.Configs[selectedConfig.Id] = selectedConfig
+            anmTester:Save()
+        end
+
+        tbl.title = selectedConfig.Name:lower()
+
+        -- setup buttons
+        tbl.buttons = {
+            -- info
+            {
+                str = "more info...",
+                fsize = 2,
+                tooltip = generateTooltip("select for help setting up")
+            },
+            BREAK_LINE,
+            -- anm2 loader
+            {
+                str = "loaded anm2:",
+                nosel = true,
+                fsize = 2,
+            },
+            {
+                str = grabFilename(selectedConfig.Path),
+                fsize = 1,
+                tooltip = generateTooltip("enter the file path of your anm2 file"),
+                func = function (_, _, tbl)
+                    if not TextCapture.CapturingText then
+                        TextCapture:StartInputCapture(dssMod, "Anm2 Name", function ()
+                            -- check path
+                            local stripped = TextCapture.FinalizedCapturedTextLine:gsub(".anm2", "")
+                            local dummySprite = loadAnm2(stripped .. ".anm2")
+                            if dummySprite then
+                                selectedConfig.CurrentAnimation = dummySprite:GetDefaultAnimation()
+                                selectedConfig.Path = stripped .. ".anm2"
+                                selectedConfigSprite = dummySprite
+                                selectedConfig.SixtyFPS = false
+                                selectedConfig.ForceLoop = false
+                                selectedConfig.Offset = {0, 0}
+                                selectedConfig.PlayingAnimation = true
+
+                                -- refresh page
+                                DeadSeaScrollsMenu.OpenMenuToPath(tbl.Name, "configManager", tbl.DirectoryKey.Path)
+                            end
+                        end)
+                    end
+                end,
+                update = function (button, tab)
+                    if TextCapture.CapturingText and TextCapture.TextCaptureTarget == "Anm2 Name" then
+                        button.str = ""
+
+                        -- render the placeholder text
+                        hudFont:DrawStringScaled(TextCapture.CapturingTextLine, bselPosition.X, bselPosition.Y, 1, 1, KColor(1, 1, 1, 1), 0, true)
+                    end
+                end
+            },
+            BREAK_LINE,
+            BREAK_LINE,
+            -- animation chooser
+            {
+                strset = {"currently", "playing:"},
+                nosel = true,
+                fsize = 2,
+            },
+            {
+                str = selectedConfig.CurrentAnimation:lower(),
+                fsize = 1,
+                nosel = true,
+            },
+            BREAK_LINE,
+            BREAK_LINE,
+            -- animation switcher
+            {
+                str = "animations",
+                nosel = true,
+                fsize = 2,
+            },
+            BREAK_LINE,
+        }
+
+        -- Insert animations
+        if selectedConfig then
+            for _, animation in ipairs(selectedConfigSprite:GetAllAnimationData()) do
+                table.insert(tbl.buttons, {
+                    str = animation:GetName():lower(),
+                    fsize = 1,
+                    func = function ()
+                        selectedConfig.CurrentAnimation = animation:GetName()
+                        selectedConfigSprite:Play(animation:GetName(), true)
+                    end
+                })
+            end
+        end
+
+        local restOfTheTable = {
+            BREAK_LINE,
+            BREAK_LINE,
+            -- sprite properties
+            {
+                str = "properties",
+                nosel = true,
+                fsize = 2,
+            },
+            {
+                str = "force loop",
+                fsize = 1,
+                choices = {"false", "true"},
+                setting = selectedConfig.ForceLoop and 2 or 1,
+                variable = "Anm2Tester_ForceLoop" .. selectedConfig.Name,
+
+                generate = function (button)
+                    button.setting = selectedConfig.ForceLoop and 2 or 1
+                end,
+
+                changefunc = function (button)
+                    selectedConfig.ForceLoop = button.setting == 2
+                end
+            },
+            {
+                str = "playing at: 30 fps",
+                fsize = 1,
+                func = function (button)
+                    selectedConfig.SixtyFPS = not selectedConfig.SixtyFPS
+                    button.str = selectedConfig.SixtyFPS and "playing at: 60 fps" or "playing at: 30 fps"
+                end,
+                generate = function (button)
+                    button.str = selectedConfig.SixtyFPS and "playing at: 60 fps" or "playing at: 30 fps"
+                end
+            },
+            BREAK_LINE,
+            {
+                str = "edit playback speed...",
+                fsize = 1,
+            },
+            BREAK_LINE,
+            {
+                str = "edit offset",
+                fsize = 1,
+            },
+            BREAK_LINE,
+            BREAK_LINE,
+            -- showcase stuff
+            {
+                str = "showcasing",
+                nosel = true,
+                fsize = 2,
+            },
+            {
+                str = "scale references",
+                fsize = 1,
+            },
+            BREAK_LINE,
+            {
+                str = "preview rooms",
+                fsize = 1,
+            },
+            BREAK_LINE,
+            {
+                str = "photo mode",
+                fsize = 1,
+            },
+            BREAK_LINE,
+            BREAK_LINE,
+            {
+                str = "delete",
+                fsize = 2,
+                color = 2,
+                dest = "deleteConfig"
+            }
+        }
+
+        for _, v in ipairs(restOfTheTable) do
+            table.insert(tbl.buttons, v)
+        end
+    end
 }
+
+directory.deleteConfig = {
+    title = "delete config",
+    tooltip = {strset = {"are you sure", "you want to", "do this?"}},
+    buttons = {
+        {
+            strset = {"are you sure", "you want to", "delete this config?"},
+            nosel = true,
+            fsize = 3,
+            generate = function (_, tbl)
+                tbl.buttons[3] = {str = '"' .. selectedConfig.Name:lower() .. '"', fsize = 2, nosel = true}
+            end
+        },
+        BREAK_LINE,
+        BREAK_LINE,
+        BREAK_LINE,
+        {
+            str = "go back",
+            inline = true,
+            func = function (_, _, tbl)
+                dssMod.back(tbl)
+            end
+        },
+        {
+            str = "i'm sure",
+            inline = true,
+            func = function (_, _, tbl)
+                for i, config in ipairs(loadedSprites) do
+                    if config.Id == selectedConfig.Id then
+                        table.remove(loadedSprites, i)
+                        anmTester.ModData.Configs[config.Id] = nil
+                        break
+                    end
+                end
+                selectedConfig = nil
+
+                DeadSeaScrollsMenu.OpenMenuToPath(tbl.Name, "spriteViewer", tbl.DirectoryKey.Path)
+            end
+        }
+    }
+}
+
+--#endregion
+
+--#region Dss Misc Stuff
+
+for _, page in pairs(directory) do
+    if not page.generate then
+        page.generate = function ()
+            directoryState = DirectoryStates.NORMAL
+            renderConfig = false
+        end
+    end
+end
+
+--#endregion
+
+--#region Sprite rendering stuff
+
+function anmTester:HandleSpriteRender()
+    local room = game:GetRoom()
+    local roomCenter = room:GetCenterPos()
+
+    if not renderConfig then
+        return
+    end
+
+    if not selectedConfig then
+        return
+    end
+
+    local offset = Vector(selectedConfig.Offset[1], selectedConfig.Offset[2])
+    local pos = roomCenter + offset
+    pos = Isaac.WorldToScreen(pos)
+
+    if selectedConfig.ForceLoop
+    and selectedConfigSprite:IsFinished() then
+        selectedConfigSprite:Play(selectedConfigSprite:GetAnimation(), true)
+    end
+
+    selectedConfigSprite:Render(pos)
+
+    if selectedConfig.SixtyFPS then
+        selectedConfigSprite:Update()
+    elseif Isaac.GetFrameCount() % 2 == 0 then
+        selectedConfigSprite:Update()
+    end
+end
+
+anmTester:AddCallback(ModCallbacks.MC_POST_RENDER, anmTester.HandleSpriteRender)
+
+-- if you quit the run while the menu is open, the sprite will still be loaded
+-- so fix that ig
+function anmTester:ResetSpriteRender()
+    renderConfig = false
+end
+
+anmTester:AddCallback(ModCallbacks.MC_POST_GAME_STARTED, anmTester.ResetSpriteRender)
 
 --#endregion
 
@@ -918,15 +1215,20 @@ local directoryKey = {
     Path = {},
 }
 
-DeadSeaScrollsMenu.AddMenu("anm2 tester", {
-    Run = runMenu,
+if REPENTOGON then
+    DeadSeaScrollsMenu.AddMenu("anm2 tester", {
+        Run = runMenu,
 
-    Open = openMenu,
+        Open = openMenu,
 
-    Close = closeMenu,
+        Close = closeMenu,
 
-    UseSubMenu = false,
+        UseSubMenu = false,
 
-    Directory = directory,
-    DirectoryKey = directoryKey
-})
+        Directory = directory,
+        DirectoryKey = directoryKey
+    })
+end
+
+_G.anmTester = nil
+clearCache()

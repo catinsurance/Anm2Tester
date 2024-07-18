@@ -294,6 +294,7 @@ return function(DSSModName, DSSCoreVersion, MenuProvider)
     end
 
     local menuinput
+    local inputEnabled = true
     local function InitializeInput()
         if not menuinput then
             menuinput = {
@@ -318,7 +319,7 @@ return function(DSSModName, DSSCoreVersion, MenuProvider)
 
         local raw = input.raw
         local menu = input.menu
-        if not game:IsPaused() then
+        if not game:IsPaused() and inputEnabled then
             local moveinput = player:GetMovementInput()
             local moveinputang = moveinput:GetAngleDegrees()
             local digitalmovedir = math.floor(4 + (moveinputang + 45) / 90) % 4
@@ -1143,6 +1144,7 @@ return function(DSSModName, DSSCoreVersion, MenuProvider)
         local buttons = item.buttons
         local action = false
         local func = nil
+        local preFunc = nil
         local changefunc = nil
         local prevbutton = nil
         local dest = false
@@ -1299,6 +1301,10 @@ return function(DSSModName, DSSCoreVersion, MenuProvider)
                     if button.func then
                         func = button.func
                     end
+
+                    if button.preFunc then
+                        preFunc = button.preFunc
+                    end
                 end
 
                 if dest and not button.menu then
@@ -1308,6 +1314,10 @@ return function(DSSModName, DSSCoreVersion, MenuProvider)
 
                     directorykey.Item = dest
                 end
+            end
+
+            if preFunc then
+                preFunc(button, item, tbl)
             end
 
             --button choice selection
@@ -1451,7 +1461,7 @@ return function(DSSModName, DSSCoreVersion, MenuProvider)
 
     dssmod.defaultPanelDisappearing = function(panel, tbl)
         panel.MaskAlpha = approach(panel.MaskAlpha, 1, .25)
-        
+
         if panel.MaskAlpha == 1 or not panel.Sprites.MaskAlpha then
             panel.Idle = false
             if panel.Sprites.Face:IsFinished("Disappear") then
@@ -1469,7 +1479,7 @@ return function(DSSModName, DSSCoreVersion, MenuProvider)
         if type(useClr) == "number" then
             useClr = DeadSeaScrollsMenu.GetPalette()[useClr]
         end
-        
+
         if panel.Sprites.Shadow then
             panel.Sprites.Shadow:Render(pos, Vector.Zero, Vector.Zero)
         end
@@ -1530,7 +1540,7 @@ return function(DSSModName, DSSCoreVersion, MenuProvider)
                         buttons[#buttons + 1] = button
                     end
                 end
-    
+
                 if page and page.buttons then
                     for _, button in ipairs(page.buttons) do
                         buttons[#buttons + 1] = button
@@ -1630,7 +1640,7 @@ return function(DSSModName, DSSCoreVersion, MenuProvider)
                         break
                     end
                 end
-                
+
                 local justAppeared
                 if not activePanel then
                     activePanel = {
@@ -1712,7 +1722,7 @@ return function(DSSModName, DSSCoreVersion, MenuProvider)
                 if appearFunc then
                     finished = appearFunc(active, tbl)
                 end
-                
+
                 if finished then
                     active.Appearing = nil
                 end
@@ -1748,7 +1758,7 @@ return function(DSSModName, DSSCoreVersion, MenuProvider)
             active.Offset = Lerp(active.Offset, active.TargetOffset, 0.2)
 
             local panelPos = scenter + active.Offset
-            
+
             if active.Sprites and active.SpriteUpdateFrame then
                 for k, v in pairs(active.Sprites) do
                     v:Update()
@@ -1972,13 +1982,31 @@ return function(DSSModName, DSSCoreVersion, MenuProvider)
     local hintFont = Font()
     hintFont:Load("font/pftempestasevencondensed.fnt")
 
+    -- disable the menu from registering inputs
+    function dssmod:DisableInput()
+        inputEnabled = false
+        local menu = menuinput.menu
+
+        menu.toggle = false
+        menu.confirm = false
+        menu.back = false
+        menu.up = false
+        menu.down = false
+        menu.left = false
+        menu.right = false
+    end
+
+    function dssmod:EnableInput()
+        inputEnabled = true
+    end
+
     --POST RENDER
     local openToggle -- only store data when menu opens / closes
     function dssmod:post_render()
         local dssmenu = DeadSeaScrollsMenu
         local isCore = MenuProvider.IsMenuCore()
         local isOpen = dssmenu.IsOpen()
-        if isCore or isOpen then
+        if isCore or isOpen and inputEnabled then
             dssmod.getInput(0)
         end
 
@@ -2512,7 +2540,7 @@ return function(DSSModName, DSSCoreVersion, MenuProvider)
             Border = "gfx/ui/deadseascrolls/menu_border.png",
             Mask = "gfx/ui/deadseascrolls/menu_mask.png",
         }
-	
+
 		dssmenu.MenuSpritesMain = nil
 		dssmenu.MenuSpritesTooltip = nil
         function dssmenu.GetDefaultPanelSprites(panelType)
@@ -2550,10 +2578,9 @@ return function(DSSModName, DSSCoreVersion, MenuProvider)
         function dssmenu.IsMenuSafe()
             local roomHasDanger = false
             for _, entity in pairs(Isaac.GetRoomEntities()) do
-                if (entity:IsActiveEnemy() and not entity:HasEntityFlags(EntityFlag.FLAG_FRIENDLY) and not entity:GetData().DSSMenuSafe)
-                or entity.Type == EntityType.ENTITY_PROJECTILE and entity:ToProjectile().ProjectileFlags & ProjectileFlags.CANT_HIT_PLAYER == 0
-                or entity.Type == EntityType.ENTITY_BOMBDROP 
-                then
+                if (entity:IsActiveEnemy() and not entity:HasEntityFlags(EntityFlag.FLAG_FRIENDLY))
+                    or entity.Type == EntityType.ENTITY_PROJECTILE and entity:ToProjectile().ProjectileFlags & ProjectileFlags.CANT_HIT_PLAYER == 0
+                    or entity.Type == EntityType.ENTITY_BOMBDROP then
                     roomHasDanger = true
                     break
                 end

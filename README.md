@@ -30,6 +30,7 @@ Features:
 - Switch between animations that you've already played before easily.
 - Select multiple different sprites to use for comparing size.
 - Special, empty 2x2 preview room for viewing sprites without distraction.
+- Photo mode that allows you to frame screenshots by removing HUD and the player.
 
 ====================================================================================================
 
@@ -37,6 +38,8 @@ Why I made this:
 
 It's important to maintain a consistent scale when making sprites, especially enemies. You don't want to make your enemy super huge, or your boss super small.
 I'm hoping this tool will help people compare the scale of their sprite next to Isaac or other enemies.
+
+Also, it's cool for showcasing stuff.
 
 ====================================================================================================
 
@@ -47,4 +50,5 @@ https://discord.gg/bNhNkGa6QX
 
 ====================================================================================================
 
-Slugcat, 2023
+Made by Slugcat
+Sprites by Ferpe
